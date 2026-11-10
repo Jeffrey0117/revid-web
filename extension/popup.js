@@ -18,9 +18,25 @@ function shorten(url) {
     $('count').textContent = items.length
         ? `${items.length} 個來源` + (segments ? ` · ${segments} 個分段` : '')
         : '';
-    $('foot').textContent = segments
-        ? `分段只計數不列出 — 一支直播會抓到成千上萬個。`
-        : `只觀察，不攔截。`;
+    const foot = $('foot');
+    foot.textContent = segments
+        ? '分段只計數不列出 — 一支直播會抓到成千上萬個。 '
+        : '只觀察，不攔截。 ';
+    const gear = document.createElement('a');
+    gear.textContent = '設定金鑰';
+    gear.onclick = () => $('setup').classList.toggle('hide');
+    foot.appendChild(gear);
+
+    // The token is what stops any page you visit from queueing downloads on
+    // your machine through 127.0.0.1, so it is asked for rather than defaulted.
+    const { revidToken = '' } = await chrome.storage.local.get('revidToken');
+    $('token').value = revidToken;
+    if (!revidToken) $('setup').classList.remove('hide');
+    $('save').onclick = async () => {
+        await chrome.storage.local.set({ revidToken: $('token').value.trim() });
+        $('saved').textContent = '已儲存';
+        setTimeout(() => { $('saved').textContent = ''; }, 1500);
+    };
 
     if (!items.length) { $('empty').hidden = false; return; }
 

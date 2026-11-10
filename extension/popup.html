@@ -34,6 +34,17 @@
   button.ok { background: #1d4ed8; border-color: #1d4ed8; color: #fff; }
   #empty { padding: 28px 16px; text-align: center; color: #6b7280; font-size: 12px; line-height: 1.7; }
   footer { padding: 9px 13px; border-top: 1px solid #23262c; font-size: 11px; color: #6b7280; }
+  footer a { color: #6b7280; cursor: pointer; text-decoration: underline; }
+  #setup { padding: 11px 13px; border-top: 1px solid #23262c; }
+  #setup.hide { display: none; }
+  #setup p { margin: 0 0 7px; font-size: 11px; color: #8b929c; line-height: 1.6; }
+  #setup input {
+    width: 100%; box-sizing: border-box; padding: 6px 8px; border-radius: 6px;
+    border: 1px solid #2b3038; background: #0d0f12; color: #e6e8eb;
+    font-family: ui-monospace, Consolas, monospace; font-size: 11px;
+  }
+  #setup .r { display: flex; gap: 6px; margin-top: 7px; align-items: center; }
+  #saved { font-size: 11px; color: #86e0ab; }
 </style>
 </head>
 <body>
@@ -41,6 +52,14 @@
 <ul id="list"></ul>
 <div id="empty" hidden>這個分頁還沒載入任何影片串流。<br>播放影片之後再打開這裡。</div>
 <footer id="foot"></footer>
+<div id="setup" class="hide">
+  <p>「送到 ReVid」需要 ReVid 的金鑰。<br>在 ReVid 的設定裡找到它,貼過來一次就好。</p>
+  <input id="token" type="password" placeholder="貼上 ReVid 金鑰" spellcheck="false">
+  <div class="r">
+    <button id="save" class="ok">儲存</button>
+    <span id="saved"></span>
+  </div>
+</div>
 <script src="popup.js"></script>
 </body>
 </html>
