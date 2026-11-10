@@ -20,10 +20,15 @@
 //   upstream: https://github.com/Jeffrey0117/subtitle-overlay-kit
 //   commit:   1cf60d14ddf52d9cfa76871c686e4aa0b912a30b
 //
-// Byte-identical to the kit below this header. Fix bugs upstream and
-// re-vendor: a fix made here is a fix the userscript and the extension
-// never get, which is the whole thing the kit exists to prevent.
-// Lives under electron/ because that is what ships — src/ is not packaged.
+// The body below is byte-identical to the kit's index.js; only the module
+// epilogue differs. The kit ships CommonJS for the sake of userscripts and
+// node, and Vite's dev server does not give a .cjs file a default export the
+// way its production build does — importing it worked when built and left the
+// renderer a black screen when run. So the vendored copy is ESM.
+//
+// lan-page.cjs reads this file as text and strips the epilogue, so nothing
+// actually requires it at runtime. It lives under electron/ because that is
+// what gets packaged; src/ does not.
 
 
 /*
@@ -258,6 +263,7 @@ function maxOffsetFor(o) {
   var guess = o.fontSize * 2.8 + 16;
   return Math.max(120, Math.round(o.areaHeight - guess));
 }
+
 
 
 /* ReVid subtitle overlay — the web shell.

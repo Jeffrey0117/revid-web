@@ -9,12 +9,12 @@ import path from 'node:path';
 import { fileURLToPath } from 'node:url';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
-const KIT = path.resolve(here, '../ReVid/electron/vendor/subtitle-overlay-kit.cjs');
+const KIT = path.resolve(here, '../ReVid/electron/vendor/subtitle-overlay-kit.js');
 const SHELL = path.join(here, 'src', 'overlay.js');
 const OUT = path.join(here, 'dist', 'revid-subs.user.js');
 
 const kitSrc = fs.readFileSync(KIT, 'utf8');
-const cut = kitSrc.indexOf('module.exports = {');
+const cut = kitSrc.indexOf('export {');
 if (cut < 0) throw new Error('vendored kit has no export block — did it change shape?');
 
 const commit = (kitSrc.match(/commit:\s+([0-9a-f]{7,40})/) || [])[1] || 'unknown';
