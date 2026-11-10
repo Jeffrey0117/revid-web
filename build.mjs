@@ -38,8 +38,18 @@ const header = `// ==UserScript==
  */
 `;
 
-fs.mkdirSync(path.dirname(OUT), { recursive: true });
-fs.writeFileSync(OUT, header + '\n(function(){\n' + kitBody + '\n' + shell + '\n})();\n', 'utf8');
+const bundle = '\n(function(){\n' + kitBody + '\n' + shell + '\n})();\n';
 
-const bytes = fs.statSync(OUT).size;
-console.log(`built ${path.relative(here, OUT)} — ${(bytes / 1024).toFixed(1)} KB, kit @ ${commit.slice(0, 8)}`);
+fs.mkdirSync(path.dirname(OUT), { recursive: true });
+fs.writeFileSync(OUT, header + bundle, 'utf8');
+
+// The extension's content script is the same bundle without the userscript
+// metadata block — one shell, two deliveries, so a fix cannot land in only
+// one of them.
+const EXT = path.join(here, 'extension', 'content.js');
+fs.writeFileSync(EXT, `/* Built by build.mjs — do not edit.\n *   shell: src/overlay.js\n *   kit:   subtitle-overlay-kit @ ${commit}\n */\n` + bundle, 'utf8');
+
+const kb = (f) => (fs.statSync(f).size / 1024).toFixed(1);
+console.log(`built ${path.relative(here, OUT)} — ${kb(OUT)} KB`);
+console.log(`built ${path.relative(here, EXT)} — ${kb(EXT)} KB`);
+console.log(`kit @ ${commit.slice(0, 8)}`);

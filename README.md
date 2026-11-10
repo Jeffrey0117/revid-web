@@ -33,6 +33,33 @@ node build.mjs          # → dist/revid-subs.user.js
 - **不用 `<video>` 的播放器**(canvas 繪製)目前完全不支援。
 - **腳本版拿不到 `webRequest`**,所以抓串流網址的能力天生比擴充版弱一截。這兩個版本功能不會對等,不要當成同一個東西規劃。
 
+## 擴充版(`extension/`)— 寫好了,**還沒驗證**
+
+MV3。`background.js` 用 `webRequest` 觀察模式記錄這個分頁載入的媒體請求,popup 列出來、可複製、可「送到 ReVid」。content script 跟腳本版是**同一份 bundle**(`build.mjs` 同時產出兩邊)。
+
+⚠️ **以下是推論,不是實測結果** —— 自動化載入 unpacked 擴充在這台機器上沒成功,所以抓取邏輯一行都沒被真的執行過。別當成能用。
+
+試過三種方式,Chrome 都**連註冊都沒有**(`extensions-manager` 的 count 是 0):
+
+1. `--load-extension=<dir>`
+2. 加上 `--disable-extensions-except=<dir>`
+3. 事先把設定檔的 `extensions.ui.developer_mode` 寫成 true
+
+排除過的原因:`chrome://policy` 裡**所有** Extension 相關政策都是「未設定」(沒有企業封鎖);manifest 是合法的 MV3,引用的三個檔案都在;指令列旗標 Chrome 有收到(`chrome://policy` 的旗標列表看得到)。
+
+**要驗證就手動載一次**:`chrome://extensions` → 開「開發人員模式」→「載入未封裝項目」→ 選 `revid-web/extension`。然後開一個會播 HLS 的頁面,點工具列圖示。
+
+本機有現成的測試素材:
+
+```bash
+cd testpage && node serve.mjs 8777     # 支援 Range,python 那個不支援
+# 然後開 http://127.0.0.1:8777/hls.html
+```
+
+那頁刻意用 hls.js 走 MSE —— **播放清單網址只存在於網路請求裡,DOM 完全沒有**,正是「只有擴充抓得到、腳本抓不到」的形狀。
+
+`送到 ReVid` 會打 `http://127.0.0.1:31849/api/grab`,**那個端點 ReVid 還沒有**,要另外做。
+
 ## 還沒做
 
 - 自己的字幕來源(丟 .srt / 接 ReVid 本機的轉錄)—— 目前只吃頁面現有的 track

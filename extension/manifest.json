@@ -1,0 +1,21 @@
+{
+  "manifest_version": 3,
+  "name": "ReVid",
+  "version": "0.1.0",
+  "description": "把 ReVid 的字幕層蓋到網頁播放器上，順便看見這個分頁在載什麼影片串流。",
+  "permissions": ["webRequest", "storage", "tabs"],
+  "host_permissions": ["<all_urls>"],
+  "background": { "service_worker": "background.js" },
+  "action": {
+    "default_popup": "popup.html",
+    "default_title": "ReVid"
+  },
+  "content_scripts": [
+    {
+      "matches": ["<all_urls>"],
+      "js": ["content.js"],
+      "run_at": "document_idle",
+      "all_frames": true
+    }
+  ]
+}
