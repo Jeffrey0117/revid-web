@@ -13,6 +13,23 @@
 (function () {
     'use strict';
 
+    var HOST_ID = 'revid-subs-host';
+
+    // The userscript and the extension both match every page, so somebody
+    // running both gets two overlays: doubled text, and a drag that moves only
+    // one of them. Whichever arrives first owns the page; the second stands
+    // down and says so rather than fighting over the same video.
+    if (document.getElementById(HOST_ID)) {
+        if (!window.ReVidSubs) {
+            window.ReVidSubs = {
+                report: function () {
+                    return { standDown: true, reason: 'another ReVid overlay already owns this page' };
+                }
+            };
+        }
+        return;
+    }
+
     var STORE_KEY = 'revid-web-subtitle-style';
 
     var DEFAULT_STYLE = {
@@ -108,19 +125,208 @@
     }
 
     /* ---------------------------------------------------------------- *
+     * Subtitles the page does not have
+     * ---------------------------------------------------------------- */
+
+    // Plenty of video has no subtitle track at all, and the ones that do are
+    // often the wrong language. Dropping a .srt or .vtt onto the picture loads
+    // it; a second file becomes the lower line, so two files make it bilingual.
+    //
+    // Parsing is parseSubtitles from bilingual-subtitle-kit, inlined above —
+    // not a regex written here. Real subtitle files have comma milliseconds,
+    // BOMs, CRLF and missing blank lines, and a hand-rolled parser gets the
+    // first or last cue wrong without ever saying so.
+    var loaded = null;        // { en: [cues], zh: [cues]|null, names: [] }
+
+    // Pair a second file's lines onto the first by overlap, so the two
+    // languages stay together even when their cue boundaries differ — which
+    // they almost always do, because they were timed separately.
+    function pairByTime(primary, secondary) {
+        var out = [];
+        var j = 0;
+        for (var i = 0; i < primary.length; i++) {
+            var p = primary[i];
+            var mid = p.start + (p.end - p.start) / 2;
+            while (j < secondary.length - 1 && secondary[j].end < mid) j++;
+            var s = secondary[j];
+            var overlaps = s && s.start <= p.end && s.end >= p.start;
+            out.push({ start: p.start, end: p.end, text: p.text, second: overlaps ? s.text : '' });
+        }
+        return out;
+    }
+
+    function cueFromLoaded(time) {
+        if (!loaded) return null;
+        var list = loaded.paired || loaded.en;
+        // A plain scan: subtitle files are a few thousand lines and this runs
+        // on timeupdate (4Hz), not per frame.
+        for (var i = 0; i < list.length; i++) {
+            if (time >= list[i].start && time <= list[i].end) return list[i];
+        }
+        return null;
+    }
+
+    function subtitleKey() {
+        var dur = video && isFinite(video.duration) ? Math.round(video.duration) : 0;
+        return 'revid-web-subs:' + location.hostname + location.pathname + ':' + dur;
+    }
+
+    function rememberLoaded() {
+        if (!loaded) return;
+        var payload = JSON.stringify({ at: Date.now(), names: loaded.names, en: loaded.en, zh: loaded.zh });
+        try {
+            localStorage.setItem(subtitleKey(), payload);
+        } catch (e) {
+            // Out of quota: drop every other page's subtitles and try once
+            // more. Losing an old cache beats losing the file just loaded.
+            try {
+                for (var i = localStorage.length - 1; i >= 0; i--) {
+                    var k = localStorage.key(i);
+                    if (k && k.indexOf('revid-web-subs:') === 0 && k !== subtitleKey()) localStorage.removeItem(k);
+                }
+                localStorage.setItem(subtitleKey(), payload);
+            } catch (e2) { /* too big for storage; it still works this session */ }
+        }
+    }
+
+    function recallLoaded() {
+        try {
+            var saved = JSON.parse(localStorage.getItem(subtitleKey()));
+            if (!saved || !saved.en || !saved.en.length) return false;
+            loaded = { en: saved.en, zh: saved.zh || null, names: saved.names || [] };
+            loaded.paired = loaded.zh ? pairByTime(loaded.en, loaded.zh) : null;
+            return true;
+        } catch (e) {
+            return false;
+        }
+    }
+
+    function loadText(text, name) {
+        var cues = parseSubtitles(text);
+        if (!cues.length) {
+            toast('讀不到字幕：' + (name || '檔案'));
+            return 0;
+        }
+        if (!loaded) {
+            loaded = { en: cues, zh: null, names: [name || '字幕'], paired: null };
+            toast(cues.length + ' 句字幕 · ' + (name || '') + '\n再拖一個檔可以變雙語');
+        } else if (!loaded.zh) {
+            loaded.zh = cues;
+            loaded.names.push(name || '第二語言');
+            loaded.paired = pairByTime(loaded.en, loaded.zh);
+            toast('雙語已開 · ' + loaded.names.join(' + '));
+        } else {
+            // A third file replaces the pair rather than being ignored: the
+            // user is most likely correcting a wrong file.
+            loaded = { en: cues, zh: null, names: [name || '字幕'], paired: null };
+            toast('換成 ' + (name || '新字幕') + '（' + cues.length + ' 句）');
+        }
+        rememberLoaded();
+        tick();
+        return cues.length;
+    }
+
+    function clearLoaded() {
+        loaded = null;
+        try { localStorage.removeItem(subtitleKey()); } catch (e) { /* ignore */ }
+        toast('已清掉載入的字幕' + (track ? '，回到網頁本身的字幕軌' : ''));
+        tick();
+    }
+
+    var SUBTITLE_FILE = /\.(srt|vtt|ass|ssa)$/i;
+
+    function readDropped(files) {
+        for (var i = 0; i < files.length; i++) {
+            var f = files[i];
+            if (!SUBTITLE_FILE.test(f.name)) continue;
+            (function (file) {
+                var r = new FileReader();
+                r.onload = function () { loadText(String(r.result), file.name); };
+                r.onerror = function () { toast('讀檔失敗：' + file.name); };
+                // Subtitle files are usually UTF-8; a mis-decoded Big5 file
+                // shows as mojibake rather than failing, which at least tells
+                // the user what happened.
+                r.readAsText(file, 'utf-8');
+            })(f);
+            return true;
+        }
+        return false;
+    }
+
+    // Only intercept a drag that is over the video. Stealing every file drop on
+    // the page would break the page's own uploads.
+    function overVideo(e) {
+        if (!video) return false;
+        var r = video.getBoundingClientRect();
+        return e.clientX >= r.left && e.clientX <= r.right && e.clientY >= r.top && e.clientY <= r.bottom;
+    }
+
+    function hasFiles(e) {
+        var dt = e.dataTransfer;
+        if (!dt) return false;
+        if (dt.types) {
+            for (var i = 0; i < dt.types.length; i++) if (dt.types[i] === 'Files') return true;
+        }
+        return false;
+    }
+
+    function installDrop() {
+        window.addEventListener('dragover', function (e) {
+            if (!hasFiles(e) || !overVideo(e)) return;
+            e.preventDefault();
+            if (e.dataTransfer) e.dataTransfer.dropEffect = 'copy';
+            hint(true);
+        }, true);
+        window.addEventListener('dragleave', function () { hint(false); }, true);
+        window.addEventListener('drop', function (e) {
+            if (!hasFiles(e) || !overVideo(e)) return;
+            hint(false);
+            var files = e.dataTransfer && e.dataTransfer.files;
+            if (files && files.length && readDropped(files)) {
+                e.preventDefault();
+                e.stopPropagation();
+            }
+        }, true);
+    }
+
+    /* ---------------------------------------------------------------- *
      * The box
      * ---------------------------------------------------------------- */
 
     var style = loadStyle();
     var host = null, box = null, enEl = null, zhEl = null;
+    var toastEl = null, dropEl = null, toastTimer = null;
     var video = null, track = null;
     var drag = null, resize = null, moved = false;
+
+    function toast(message) {
+        if (!toastEl) return;
+        var r = videoRect();
+        toastEl.textContent = message;
+        toastEl.style.left = Math.round(r.left + 16) + 'px';
+        toastEl.style.top = Math.round(r.top + 16) + 'px';
+        toastEl.classList.add('on');
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(function () { toastEl.classList.remove('on'); }, 3200);
+    }
+
+    function hint(on) {
+        if (!dropEl) return;
+        if (on) {
+            var r = videoRect();
+            dropEl.style.left = Math.round(r.left + 8) + 'px';
+            dropEl.style.top = Math.round(r.top + 8) + 'px';
+            dropEl.style.width = Math.round(r.width - 16) + 'px';
+            dropEl.style.height = Math.round(r.height - 16) + 'px';
+        }
+        dropEl.classList.toggle('on', !!on);
+    }
 
     // A shadow root of our own, so the page's CSS cannot reach in. Pages with
     // aggressive resets would otherwise flatten the box.
     function build() {
         host = document.createElement('div');
-        host.id = 'revid-subs-host';
+        host.id = HOST_ID;
         host.style.cssText = 'position:fixed;inset:0;z-index:2147483646;pointer-events:none;';
         document.documentElement.appendChild(host);
 
@@ -143,13 +349,35 @@
             'box-shadow:0 0 2px rgba(0,0,0,.6)}',
             '.corner{width:16px;height:16px;display:flex;align-items:center;justify-content:center}',
             '.corner i{width:7px;height:7px;border-radius:1px;background:#fff;',
-            'box-shadow:0 0 0 1px rgba(0,0,0,.55)}'
+            'box-shadow:0 0 0 1px rgba(0,0,0,.55)}',
+            // Feedback for loading a file. Without it a drop that silently
+            // worked and a drop the page swallowed look identical.
+            '.toast{position:fixed;padding:10px 14px;border-radius:8px;',
+            'background:rgba(17,17,17,.92);color:#fff;font:500 13px/1.45 system-ui,sans-serif;',
+            'white-space:pre-line;max-width:min(420px,70vw);opacity:0;transform:translateY(6px);',
+            'transition:opacity .18s,transform .18s;pointer-events:none}',
+            '.toast.on{opacity:1;transform:none}',
+            '.drop{position:fixed;border:2px dashed rgba(255,255,255,.85);border-radius:10px;',
+            'background:rgba(0,0,0,.35);display:none;align-items:center;justify-content:center;',
+            'color:#fff;font:600 15px/1.4 system-ui,sans-serif;text-shadow:0 1px 3px rgba(0,0,0,.8)}',
+            '.drop.on{display:flex}',
+            '@media (prefers-reduced-motion:reduce){.toast{transition:none}}'
         ].join('');
         root.appendChild(css);
 
+        toastEl = document.createElement('div');
+        toastEl.className = 'toast';
+        root.appendChild(toastEl);
+
+        dropEl = document.createElement('div');
+        dropEl.className = 'drop';
+        dropEl.textContent = '放開載入字幕（.srt / .vtt）';
+        root.appendChild(dropEl);
+
         box = document.createElement('div');
         box.className = 'box';
-        box.title = '拖曳移動 · 四角等比縮放 · 兩側改寬度 · 雙擊回原位';
+        box.title = '拖曳移動 · 四角等比縮放 · 兩側改寬度 · 雙擊回原位
+把 .srt / .vtt 拖到畫面上可換成自己的字幕，再拖第二個檔變雙語';
         enEl = document.createElement('p'); enEl.className = 'en';
         zhEl = document.createElement('p'); zhEl.className = 'zh';
         box.appendChild(enEl);
@@ -306,9 +534,27 @@
      * Per-frame: which piece belongs on screen
      * ---------------------------------------------------------------- */
 
+    // A file the user loaded wins over the page's own track: they went to the
+    // trouble precisely because the page's subtitles were missing or wrong.
+    // Both sources are normalised to { start, end, text, second } here so the
+    // drawing code below has one shape to deal with.
+    function currentCue(time) {
+        var mine = cueFromLoaded(time);
+        if (mine) return mine;
+        if (loaded) return null;          // loaded but between cues — stay quiet
+        var cue = cueAt(track, time);
+        if (!cue) return null;
+        return {
+            start: cue.startTime,
+            end: cue.endTime,
+            text: cue.text.replace(/<[^>]+>/g, ''),   // VTT allows inline markup
+            second: ''
+        };
+    }
+
     function tick() {
-        if (!video) return;
-        var cue = cueAt(track, video.currentTime);
+        if (!video || !box) return;
+        var cue = currentCue(video.currentTime);
         if (!cue) {
             box.style.display = 'none';
             return;
@@ -316,9 +562,9 @@
         box.style.display = '';
         var inner = Math.max(120, Math.round(videoRect().width * style.widthPct / 100) - 32);
         var piece = visibleCue({
-            en: cue.text.replace(/<[^>]+>/g, ''),   // VTT allows inline markup
-            zh: '',
-            progress: cueProgress({ start: cue.startTime, end: cue.endTime }, video.currentTime),
+            en: cue.text,
+            zh: cue.second || '',
+            progress: cueProgress({ start: cue.start, end: cue.end }, video.currentTime),
             widthPx: inner,
             fontSize: style.fontSize
         });
@@ -343,16 +589,29 @@
             textTracks: video && video.textTracks ? video.textTracks.length : 0,
             readableCues: track && track.cues ? track.cues.length : 0,
             inShadow: vids.some(function (v) { return v.getRootNode() !== document; }),
-            overlayUp: !!box
+            overlayUp: !!box,
+            // Which subtitles are actually on screen, and where they came from.
+            source: loaded ? (loaded.zh ? 'loaded file (bilingual)' : 'loaded file')
+                : (track ? 'page <track>' : 'none'),
+            loadedNames: loaded ? loaded.names.slice() : [],
+            loadedCues: loaded ? loaded.en.length : 0
         };
         return r;
     }
 
     function start() {
+        var first = !host;
         video = mainVideo();
         if (!video) return false;
-        if (!host) build();
+        if (first) build();
         track = cuesFromTracks(video);
+        if (first) installDrop();
+        // Subtitles loaded for this page last time come back without asking,
+        // keyed by the page and the video's duration so a different episode on
+        // the same URL does not inherit the wrong file.
+        if (!loaded && recallLoaded()) {
+            toast('沿用上次載入的字幕 · ' + loaded.names.join(' + '));
+        }
         video.addEventListener('timeupdate', tick);
         window.addEventListener('resize', place);
         window.addEventListener('scroll', place, true);
@@ -371,6 +630,23 @@
         report: report,
         style: function () { return style; },
         restart: start,
-        setStyle: function (patch) { Object.assign(style, patch); saveStyle(style); place(); }
+        setStyle: function (patch) { Object.assign(style, patch); saveStyle(style); place(); },
+        // Dropping a file on the video is the normal way in; these are for the
+        // extension popup and for driving it from the console.
+        loadText: loadText,
+        loadFile: function (file) { return readDropped([file]); },
+        clear: clearLoaded,
+        pick: function () {
+            var input = document.createElement('input');
+            input.type = 'file';
+            input.accept = '.srt,.vtt,.ass,.ssa,text/vtt';
+            input.style.display = 'none';
+            input.addEventListener('change', function () {
+                if (input.files && input.files.length) readDropped(input.files);
+                input.remove();
+            });
+            document.documentElement.appendChild(input);
+            input.click();
+        }
     };
 })();

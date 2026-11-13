@@ -18,11 +18,38 @@ node build.mjs          # → dist/revid-subs.user.js
 
 - 找到頁面的 `<video>`(含 open shadow DOM;取畫面上最大的那個,因為頁面到處是隱藏的預覽和廣告元素)
 - 讀頁面自己的 `<track>` 字幕 —— 必須把 track 設成 `hidden`:`disabled` 永遠不會解析,`showing` 會讓瀏覽器把它自己的字幕畫在我們上面
+- **自己帶字幕**:把 `.srt` / `.vtt` 拖到影片上就換成那一份（解析走 [bilingual-subtitle-kit](https://github.com/Jeffrey0117/bilingual-subtitle-kit)，吃逗號毫秒、BOM、CRLF、cue 之間沒空行這些真實檔案的毛病）
+- **雙語**:再拖第二個檔，兩份用時間重疊配對（兩種語言幾乎不會對齊，因為是分開上時間軸的），下排顯示第二語言
+- 載入的字幕按「網域+路徑+影片長度」記住，重開頁面自己回來；同一個網址換一集不會沿用到錯的檔
 - **200 字的 cue 即時切成兩行一片**,跟著 cue 自己的時間推進
 - 拖曳移動、放開時自動換錨邊、寫進 localStorage
 - 自己的 shadow root,頁面的 CSS reset 打不進來
 
 框是對著**影片的矩形**定位,不是視窗 —— 不然播放器嵌在頁面中間時,字幕會跑到旁邊的空白區。
+
+## 自己帶字幕
+
+頁面沒有字幕，或有的是錯的語言 —— 把檔案拖到**影片上**就好：
+
+| 動作 | 結果 |
+|------|------|
+| 拖一個 `.srt` / `.vtt` 到影片 | 換成這份字幕（蓋過頁面原本的 track） |
+| 再拖第二個檔 | 變雙語，下排是第二份 |
+| 再拖第三個 | 當成「我拖錯了」，整組換成新的 |
+
+只有**游標在影片範圍內**才攔截拖放 —— 不然會把頁面自己的上傳功能吃掉。
+
+也可以從 console 驅動：
+
+```js
+ReVidSubs.pick()                 // 開檔案選擇器
+ReVidSubs.loadText(text, '名字')  // 直接餵文字
+ReVidSubs.clear()                // 清掉，回到頁面本身的 track
+ReVidSubs.report()               // 現在的字幕是哪來的
+```
+
+腳本版和擴充版都 match 全站，所以兩個都裝的話會有兩層字幕疊在一起。**先到的那個
+擁有這個頁面**，後到的直接退場（`report()` 會回 `standDown: true`）。
 
 ## 現況:做不到什麼
 
@@ -62,8 +89,6 @@ cd testpage && node serve.mjs 8777     # 支援 Range,python 那個不支援
 
 ## 還沒做
 
-- 自己的字幕來源(丟 .srt / 接 ReVid 本機的轉錄)—— 目前只吃頁面現有的 track
-- 雙語(kit 支援,殼還沒接 `zh`)
 - 擴充版:`webRequest` 攔 `.m3u8` / `.mp4`,把網址丟回 ReVid 桌面版下載
 
 ## 測試頁
