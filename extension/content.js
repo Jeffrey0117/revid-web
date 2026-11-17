@@ -1397,8 +1397,8 @@ function createCache(opts = {}) {
 
         box = document.createElement('div');
         box.className = 'box';
-        box.title = '拖曳移動 · 四角等比縮放 · 兩側改寬度 · 雙擊回原位
-把 .srt / .vtt 拖到畫面上可換成自己的字幕，再拖第二個檔變雙語';
+        box.title = '拖曳移動 · 四角等比縮放 · 兩側改寬度 · 雙擊回原位\n'
+            + '把 .srt / .vtt 拖到畫面上可換成自己的字幕，再拖第二個檔變雙語';
         enEl = document.createElement('p'); enEl.className = 'en';
         zhEl = document.createElement('p'); zhEl.className = 'zh';
         box.appendChild(enEl);
