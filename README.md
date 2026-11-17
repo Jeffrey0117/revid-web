@@ -85,7 +85,10 @@ cd testpage && node serve.mjs 8777     # 支援 Range,python 那個不支援
 
 那頁刻意用 hls.js 走 MSE —— **播放清單網址只存在於網路請求裡,DOM 完全沒有**,正是「只有擴充抓得到、腳本抓不到」的形狀。
 
-`送到 ReVid` 會打 `http://127.0.0.1:31849/api/grab`,**那個端點 ReVid 還沒有**,要另外做。
+`送到 ReVid` 會打 `http://127.0.0.1:31849/api/grab`。那個端點**已經有了**
+(`ReVid/electron/grab-server.cjs`):綁 127.0.0.1、驗 popup 裡設定的金鑰、只收
+http(s) 網址,收到之後由 app 問使用者要存哪裡。這條鏈本身還沒端到端跑過,因為
+擴充版沒載入成功過。
 
 ## 還沒做
 

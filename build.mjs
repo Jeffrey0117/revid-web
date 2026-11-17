@@ -44,6 +44,15 @@ for (const name of ['visibleCue', 'cueProgress', 'fitInside', 'anchorToTop', 'cl
     }
 }
 
+// The shell also reads constants off the kit. A missing one is worse than a
+// missing function: the bundle builds, loads, and only throws when the user
+// first drags the box.
+for (const name of ['DRAG_THRESHOLD']) {
+    if (!new RegExp(`(var|let|const)\\s+${name}\\b`).test(kitBody)) {
+        throw new Error(`the shell uses ${name} but no inlined kit defines it`);
+    }
+}
+
 const header = `// ==UserScript==
 // @name         ReVid Subtitles
 // @namespace    https://github.com/Jeffrey0117
